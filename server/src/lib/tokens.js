@@ -24,6 +24,7 @@ export function generateRefreshToken() {
   return randomToken(48)
 }
 
-export function refreshExpiryDate() {
-  return new Date(Date.now() + config.refreshTokenTtlDays * 86400000)
+export function refreshExpiryDate(rememberMe) {
+  const ms = rememberMe ? config.refreshTokenTtlDays * 86400000 : config.sessionOnlyTtlHours * 3600000
+  return new Date(Date.now() + ms)
 }

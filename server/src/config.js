@@ -13,7 +13,12 @@ export const config = {
   jwtAccessSecret: process.env.JWT_ACCESS_SECRET ?? 'dev-access-secret-change-me',
   jwtRefreshPepper: process.env.JWT_REFRESH_PEPPER ?? 'dev-refresh-pepper-change-me',
   accessTokenTtl: process.env.ACCESS_TOKEN_TTL ?? '15m',
+  // "Remember me" checked: a persistent refresh cookie lasting this many days.
   refreshTokenTtlDays: Number(process.env.REFRESH_TOKEN_TTL_DAYS ?? 30),
+  // "Remember me" unchecked: a browser-session cookie (gone when the browser
+  // closes), additionally capped server-side at this many hours so a tab
+  // left open forever doesn't equal an unbounded session.
+  sessionOnlyTtlHours: Number(process.env.SESSION_ONLY_TTL_HOURS ?? 12),
 
   loginMaxAttempts: Number(process.env.LOGIN_MAX_ATTEMPTS ?? 5),
   loginLockoutWindowMin: Number(process.env.LOGIN_LOCKOUT_WINDOW_MIN ?? 15),

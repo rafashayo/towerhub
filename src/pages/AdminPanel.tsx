@@ -18,6 +18,7 @@ import {
   Mail,
   KeyRound,
   Search,
+  Download,
 } from 'lucide-react'
 import { modService, type ModWithStats } from '../services/modService'
 import { commentService } from '../services/commentService'
@@ -26,6 +27,7 @@ import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { CATEGORY_ICON } from '../lib/categoryMeta'
 import { formatDate, timeAgo } from '../lib/utils'
+import { Select, type SelectOption } from '../components/ui/Select'
 import type { Comment, ModStatus, UserStatus } from '../types'
 import type { AdminUser, LoginAttempt } from '../services/authService'
 
@@ -51,6 +53,13 @@ const MOD_STATUS_COLOR: Record<ModStatus, string> = {
   rejected: 'text-red-400 border-red-800/50',
 }
 
+const STATUS_FILTER_OPTIONS: SelectOption<ModStatus | 'all'>[] = [
+  { value: 'all', label: 'All statuses' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'rejected', label: 'Rejected' },
+]
+
 const STATUS_LABEL: Record<UserStatus, string> = {
   active: 'Active',
   warned: 'Warned',
@@ -60,6 +69,36 @@ const STATUS_COLOR: Record<UserStatus, string> = {
   active: 'text-signal-400 border-signal-700',
   warned: 'text-amber-400 border-amber-700/50',
   banned: 'text-red-400 border-red-800/50',
+}
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  tone = 'default',
+}: {
+  icon: typeof Package
+  label: string
+  value: string | number
+  tone?: 'default' | 'amber' | 'red'
+}) {
+  const toneClasses = {
+    default: 'bg-signal-950 text-signal-400',
+    amber: 'bg-amber-950/40 text-amber-400',
+    red: 'bg-red-950/40 text-red-400',
+  }[tone]
+
+  return (
+    <div className="card flex items-center gap-3.5 p-4">
+      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-md ${toneClasses}`}>
+        <Icon size={18} />
+      </div>
+      <div className="min-w-0">
+        <p className="font-display text-xl font-bold leading-none text-white">{value}</p>
+        <p className="mt-1 truncate text-xs text-mist-400">{label}</p>
+      </div>
+    </div>
+  )
 }
 
 export default function AdminPanel() {
@@ -118,6 +157,8 @@ export default function AdminPanel() {
 
   const pending = allMods.filter((m) => m.status === 'pending')
   const reported = allMods.filter((m) => m.reported)
+  const bannedUsers = users.filter((u) => u.status === 'banned')
+  const totalDownloads = allMods.reduce((sum, m) => sum + m.downloadCount, 0)
 
   const filteredMods = useMemo(() => {
     const q = modQuery.trim().toLowerCase()
@@ -128,47 +169,81 @@ export default function AdminPanel() {
     })
   }, [allMods, modQuery, modStatusFilter])
 
+  function actionError(err: unknown, fallback: string) {
+    push(err instanceof Error ? err.message : fallback, 'error')
+  }
+
   async function approve(modId: string) {
     setBusyId(modId)
-    await modService.setStatus(modId, 'approved')
-    push('Mod approved and published to the catalog.', 'success')
-    loadMods()
-    setBusyId(null)
+    try {
+      await modService.setStatus(modId, 'approved')
+      push('Mod approved and published to the catalog.', 'success')
+      loadMods()
+    } catch (err) {
+      actionError(err, 'Could not approve this mod.')
+    } finally {
+      setBusyId(null)
+    }
   }
   async function reject(modId: string) {
     setBusyId(modId)
-    await modService.setStatus(modId, 'rejected')
-    push('Mod rejected.', 'info')
-    loadMods()
-    setBusyId(null)
+    try {
+      await modService.setStatus(modId, 'rejected')
+      push('Mod rejected.', 'info')
+      loadMods()
+    } catch (err) {
+      actionError(err, 'Could not reject this mod.')
+    } finally {
+      setBusyId(null)
+    }
   }
   async function dismissModReport(modId: string) {
     setBusyId(modId)
-    await modService.setReported(modId, false)
-    loadMods()
-    setBusyId(null)
+    try {
+      await modService.setReported(modId, false)
+      loadMods()
+    } catch (err) {
+      actionError(err, 'Could not dismiss this report.')
+    } finally {
+      setBusyId(null)
+    }
   }
   async function removeMod(modId: string) {
     if (!confirm('Permanently delete this mod?')) return
     setBusyId(modId)
-    await modService.remove(modId)
-    push('Mod deleted.', 'success')
-    loadMods()
-    setBusyId(null)
+    try {
+      await modService.remove(modId)
+      push('Mod deleted.', 'success')
+      loadMods()
+    } catch (err) {
+      actionError(err, 'Could not delete this mod.')
+    } finally {
+      setBusyId(null)
+    }
   }
 
   async function removeComment(commentId: string) {
     setBusyId(commentId)
-    await commentService.remove(commentId)
-    push('Comment deleted.', 'success')
-    loadComments()
-    setBusyId(null)
+    try {
+      await commentService.remove(commentId)
+      push('Comment deleted.', 'success')
+      loadComments()
+    } catch (err) {
+      actionError(err, 'Could not delete this comment.')
+    } finally {
+      setBusyId(null)
+    }
   }
   async function dismissCommentReport(commentId: string) {
     setBusyId(commentId)
-    await commentService.setReported(commentId, false)
-    loadComments()
-    setBusyId(null)
+    try {
+      await commentService.setReported(commentId, false)
+      loadComments()
+    } catch (err) {
+      actionError(err, 'Could not dismiss this report.')
+    } finally {
+      setBusyId(null)
+    }
   }
 
   async function setStatus(userId: string, status: UserStatus) {
@@ -178,7 +253,7 @@ export default function AdminPanel() {
       push('User status updated.', 'success')
       loadUsers()
     } catch (err) {
-      push(err instanceof Error ? err.message : 'Could not update the user.', 'error')
+      actionError(err, 'Could not update the user.')
     } finally {
       setBusyId(null)
     }
@@ -186,17 +261,26 @@ export default function AdminPanel() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
-      <div className="mb-8 flex items-center gap-3">
+      <div className="mb-6 flex items-center gap-3">
         <div className="flex h-11 w-11 items-center justify-center rounded-md bg-signal-950 text-signal-400">
           <ShieldCheck size={20} />
         </div>
         <div>
           <p className="label-mono">Signed in as: {me?.username}</p>
-          <h1 className="text-2xl font-bold">Admin panel</h1>
+          <h1 className="text-2xl font-bold">Admin dashboard</h1>
         </div>
       </div>
 
-      <div className="mb-8 flex flex-wrap gap-2 border-b border-ink-700">
+      <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <StatCard icon={Package} label="Total mods" value={modsLoading ? '—' : allMods.length} />
+        <StatCard icon={PackageSearch} label="Pending review" value={modsLoading ? '—' : pending.length} tone={pending.length ? 'amber' : 'default'} />
+        <StatCard icon={Flag} label="Reported mods" value={modsLoading ? '—' : reported.length} tone={reported.length ? 'red' : 'default'} />
+        <StatCard icon={Download} label="Total downloads" value={modsLoading ? '—' : totalDownloads.toLocaleString('en-US')} />
+        <StatCard icon={Users} label="Total users" value={usersLoading ? '—' : users.length} />
+        <StatCard icon={ShieldX} label="Suspended users" value={usersLoading ? '—' : bannedUsers.length} tone={bannedUsers.length ? 'red' : 'default'} />
+      </div>
+
+      <div className="mb-8 flex flex-wrap gap-1.5 rounded-xl border border-ink-700 bg-ink-900/60 p-1.5">
         {TABS.map((t) => {
           const Icon = t.icon
           const count =
@@ -209,15 +293,16 @@ export default function AdminPanel() {
                   : t.key === 'reported-comments'
                     ? comments.length
                     : 0
+          const active = tab === t.key
           return (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`flex items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
-                tab === t.key ? 'border-signal-500 text-white' : 'border-transparent text-mist-400 hover:text-mist-200'
+              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+                active ? 'bg-ink-700 text-white shadow-panel ring-1 ring-inset ring-signal-800' : 'text-mist-400 hover:bg-ink-800 hover:text-mist-200'
               }`}
             >
-              <Icon size={14} />
+              <Icon size={14} className={active ? 'text-signal-400' : ''} />
               {t.label}
               {count > 0 && <span className="badge-signal !py-0.5">{count}</span>}
             </button>
@@ -237,16 +322,7 @@ export default function AdminPanel() {
                 className="input pl-9"
               />
             </div>
-            <select
-              value={modStatusFilter}
-              onChange={(e) => setModStatusFilter(e.target.value as ModStatus | 'all')}
-              className="select w-full sm:w-48"
-            >
-              <option value="all">All statuses</option>
-              <option value="approved">Approved</option>
-              <option value="pending">Pending</option>
-              <option value="rejected">Rejected</option>
-            </select>
+            <Select value={modStatusFilter} onChange={setModStatusFilter} options={STATUS_FILTER_OPTIONS} className="w-full sm:w-48" />
           </div>
 
           <div className="card overflow-hidden">
@@ -281,7 +357,7 @@ export default function AdminPanel() {
                     filteredMods.map((m) => {
                       const Icon = CATEGORY_ICON[m.category]
                       return (
-                        <tr key={m.id}>
+                        <tr key={m.id} className="transition-colors hover:bg-ink-800/40">
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2.5">
                               <img src={m.screenshots[0]} alt="" className="h-10 w-14 shrink-0 rounded object-cover" />
@@ -314,13 +390,24 @@ export default function AdminPanel() {
                           </td>
                           <td className="px-4 py-3 text-mist-400">{formatDate(m.createdAt)}</td>
                           <td className="px-4 py-3">
-                            <button
-                              disabled={busyId === m.id}
-                              onClick={() => removeMod(m.id)}
-                              className="flex items-center gap-1 rounded-md border border-red-800/40 px-2 py-1 text-xs text-red-400 hover:bg-red-950/30"
-                            >
-                              <Trash2 size={12} /> Delete
-                            </button>
+                            <div className="flex gap-1.5">
+                              {m.status === 'pending' && (
+                                <button
+                                  disabled={busyId === m.id}
+                                  onClick={() => approve(m.id)}
+                                  className="flex items-center gap-1 rounded-md border border-signal-700/50 px-2 py-1 text-xs text-signal-400 hover:bg-signal-950/40"
+                                >
+                                  <Check size={12} /> Approve
+                                </button>
+                              )}
+                              <button
+                                disabled={busyId === m.id}
+                                onClick={() => removeMod(m.id)}
+                                className="flex items-center gap-1 rounded-md border border-red-800/40 px-2 py-1 text-xs text-red-400 hover:bg-red-950/30"
+                              >
+                                <Trash2 size={12} /> Delete
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       )
@@ -361,10 +448,12 @@ export default function AdminPanel() {
                   </div>
                   <div className="flex shrink-0 gap-2">
                     <button disabled={busyId === m.id} onClick={() => approve(m.id)} className="btn-primary !px-3">
-                      <Check size={15} /> Approve
+                      {busyId === m.id ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
+                      Approve
                     </button>
                     <button disabled={busyId === m.id} onClick={() => reject(m.id)} className="btn-danger !px-3">
-                      <X size={15} /> Reject
+                      {busyId === m.id ? <Loader2 size={15} className="animate-spin" /> : <X size={15} />}
+                      Reject
                     </button>
                   </div>
                 </div>
@@ -464,7 +553,7 @@ export default function AdminPanel() {
                   </tr>
                 ) : (
                   users.map((u) => (
-                    <tr key={u.id}>
+                    <tr key={u.id} className="transition-colors hover:bg-ink-800/40">
                       <td className="px-4 py-3">
                         <Link to={`/users/${u.username}`} className="flex items-center gap-2.5 hover:text-signal-400">
                           <img src={u.avatarUrl} alt="" className="h-7 w-7 rounded-sm" />
@@ -561,7 +650,7 @@ export default function AdminPanel() {
                   </tr>
                 ) : (
                   attempts.map((a) => (
-                    <tr key={a.id}>
+                    <tr key={a.id} className="transition-colors hover:bg-ink-800/40">
                       <td className="px-4 py-3 font-mono text-xs text-mist-400">{timeAgo(a.createdAt)}</td>
                       <td className="px-4 py-3 text-mist-200">{a.email}</td>
                       <td className="px-4 py-3">

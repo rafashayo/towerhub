@@ -33,12 +33,15 @@ cp server/.env.example server/.env
 Its SQLite file lives at `server/data/towerhub.sqlite` and is created (and
 seeded with the demo accounts below) automatically on first run.
 
-Demo accounts (real accounts in the SQLite database, seeded by `server/src/db.js`):
+Demo account (real account in the SQLite database, seeded by `server/src/db.js`
+with `email_verified` already set — see below for why that matters):
 
 | Role  | Email               | Password   |
 |-------|---------------------|------------|
 | Admin | admin@towerhub.io   | admin123   |
-| User  | gus@example.com     | password1  |
+
+Any other account is one you registered yourself — and per the section
+below, it needs to be verified before it can sign in.
 
 ## Structure
 
@@ -88,17 +91,39 @@ actual database rows, actual cryptography, and actual expiring tokens:
   locks that email out, independent of per-IP rate limiting (`express-rate-limit`)
   on `/login`, `/register`, and `/forgot-password`.
 - **Session management** — every refresh token is a listed "session" the
-  account owner can see (device/created/expires) and revoke individually, or
-  all at once ("sign out of all devices"), from Profile → Security.
-  Changing your password automatically revokes every *other* session.
-- **Email verification & password reset** — real, expiring, single-use
-  tokens (SHA-256 hashed at rest, like the refresh tokens). The only thing
-  that's simulated is *delivery*: there's no SMTP provider configured, so
+  account owner can see (device/created/expires, and whether it's
+  "remembered" or session-only) and revoke individually, or all at once
+  ("sign out of all devices"), from Profile → Security. Changing your
+  password automatically revokes every *other* session.
+- **"Remember me"** — the login form's checkbox controls both how long the
+  refresh token is valid server-side (30 days vs `SESSION_ONLY_TTL_HOURS`,
+  12h by default) *and* whether the cookie itself is written to disk: with
+  it unchecked, `Set-Cookie` carries no `Expires`/`Max-Age`, so the browser
+  treats `refresh_token` as a session cookie and drops it the moment the
+  browser closes — not just a shorter timer while the tab stays open. The
+  choice is stored per-token (`remember_me` on `refresh_tokens`) and
+  survives refresh-token rotation, so it doesn't reset every 15 minutes when
+  the access token renews.
+- **Email verification is required to sign in** — `POST /register` creates
+  the account and emails a verification link, but does **not** start a
+  session: `POST /login` responds `403 EMAIL_NOT_VERIFIED` for an unverified
+  email, even with the correct password. The login form surfaces this with
+  an inline "Resend verification email" action instead of a dead-end error.
+  Opening the verification link (`GET /verify-email?token=…`) both marks the
+  address verified *and* signs the browser in on the spot, so the link
+  itself is the last step. Retrying a login before verifying doesn't count
+  toward the account-lockout threshold — correct credentials aren't a failed
+  guess.
+- **Password reset** — same real, expiring, single-use, SHA-256-hashed-at-rest
+  token pattern as verification.
+- **Email delivery is simulated** — the only deliberately fake part of the
+  whole system. There's no SMTP provider configured, so
   `simulateSendEmail()` logs the email to the server console and the API
   hands the link back to the client directly (`devPreviewUrl` / `devVerifyUrl`,
   clearly labeled, and only when `NODE_ENV !== 'production'`). Swap in a real
   provider (Postmark, SES, Resend…) and delete that field — nothing else
-  about the flow changes.
+  about either flow changes, since the token/expiry/enforcement logic is
+  already real.
 - **Audit trail** — every login attempt (success or failure, with a reason
   and IP) is logged and visible to admins under Admin panel → Login activity.
 
@@ -180,5 +205,3 @@ mod screenshots are code-generated SVGs (`lib/placeholder.ts`,
 ## Categories
 
 Schedules · Liveries · Traffic · Airports · Tools · Misc · Instruments · Utility
-#   t o w e r h u b  
- 

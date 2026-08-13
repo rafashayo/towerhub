@@ -32,13 +32,14 @@ db.exec(`
   );
 
   CREATE TABLE IF NOT EXISTS refresh_tokens (
-    id          TEXT PRIMARY KEY,
-    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    token_hash  TEXT NOT NULL,
-    user_agent  TEXT,
-    created_at  TEXT NOT NULL,
-    expires_at  TEXT NOT NULL,
-    revoked_at  TEXT
+    id           TEXT PRIMARY KEY,
+    user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash   TEXT NOT NULL,
+    user_agent   TEXT,
+    remember_me  INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT NOT NULL,
+    expires_at   TEXT NOT NULL,
+    revoked_at   TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id);
   CREATE INDEX IF NOT EXISTS idx_refresh_tokens_hash ON refresh_tokens(token_hash);
@@ -62,10 +63,11 @@ db.exec(`
   );
 
   CREATE TABLE IF NOT EXISTS pending_2fa (
-    id          TEXT PRIMARY KEY,
-    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    expires_at  TEXT NOT NULL,
-    created_at  TEXT NOT NULL
+    id           TEXT PRIMARY KEY,
+    user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    remember_me  INTEGER NOT NULL DEFAULT 0,
+    expires_at   TEXT NOT NULL,
+    created_at   TEXT NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS login_attempts (
@@ -78,6 +80,19 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_login_attempts_email ON login_attempts(email, created_at);
 `)
+
+// Lightweight migration: `CREATE TABLE IF NOT EXISTS` above doesn't add
+// columns to a table that already existed from before this column was
+// introduced (e.g. an already-running dev database).
+function ensureColumn(table, column, ddl) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all()
+  if (!columns.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`)
+    console.log(`[towerhub-server] Migrated: added ${table}.${column}`)
+  }
+}
+ensureColumn('refresh_tokens', 'remember_me', 'remember_me INTEGER NOT NULL DEFAULT 0')
+ensureColumn('pending_2fa', 'remember_me', 'remember_me INTEGER NOT NULL DEFAULT 0')
 
 function seedIfEmpty() {
   const { count } = db.prepare('SELECT COUNT(*) AS count FROM users').get()

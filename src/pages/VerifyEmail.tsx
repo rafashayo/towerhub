@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Loader2, CheckCircle2, XCircle } from 'lucide-react'
-import { authService } from '../services/authService'
 import { useAuth } from '../context/AuthContext'
 import { RadarMark } from '../components/RadarMark'
 
 export default function VerifyEmail() {
   const [params] = useSearchParams()
-  const { refresh, user } = useAuth()
+  const { verifyEmail } = useAuth()
   const token = params.get('token') ?? ''
 
   const [status, setStatus] = useState<'loading' | 'ok' | 'error'>('loading')
@@ -19,12 +18,12 @@ export default function VerifyEmail() {
       setMessage('Missing verification token.')
       return
     }
-    authService
-      .verifyEmail(token)
+    // verifyEmail() also establishes a session on success (see server route),
+    // and stores the returned user in AuthContext — no separate refresh() needed.
+    verifyEmail(token)
       .then((res) => {
         setStatus(res.verified ? 'ok' : 'error')
         setMessage(res.message)
-        if (res.verified && user) refresh()
       })
       .catch((err) => {
         setStatus('error')
@@ -52,7 +51,7 @@ export default function VerifyEmail() {
       {status !== 'loading' && <p className="mt-2 text-mist-400">{message}</p>}
       {status !== 'loading' && (
         <Link to="/" className="btn-primary mt-6">
-          Back to home
+          {status === 'ok' ? 'Continue to TowerHub' : 'Back to home'}
         </Link>
       )}
     </div>

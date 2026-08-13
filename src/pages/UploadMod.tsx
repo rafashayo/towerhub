@@ -7,7 +7,15 @@ import { modService } from '../services/modService'
 import { uploadService, type UploadedFile } from '../services/uploadService'
 import { MAX_IMAGE_BYTES, MAX_MOD_FILE_BYTES } from '../lib/files'
 import { formatBytes } from '../lib/utils'
+import { Select, type SelectOption } from '../components/ui/Select'
+import { CATEGORY_ICON } from '../lib/categoryMeta'
 import { MOD_CATEGORIES, type ModCategory } from '../types'
+
+const CATEGORY_OPTIONS: SelectOption<ModCategory>[] = MOD_CATEGORIES.map((c) => ({
+  value: c,
+  label: c,
+  icon: CATEGORY_ICON[c],
+}))
 
 export default function UploadMod() {
   const { user } = useAuth()
@@ -143,15 +151,7 @@ export default function UploadMod() {
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
             <div>
               <label className="mb-1.5 block text-sm font-semibold text-mist-100">Category</label>
-              <div className="relative">
-                <select value={category} onChange={(e) => setCategory(e.target.value as ModCategory)} className="select">
-                  {MOD_CATEGORIES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <Select value={category} onChange={setCategory} options={CATEGORY_OPTIONS} />
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-semibold text-mist-100">Version</label>

@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Loader2, LogIn, Info, ShieldCheck, ArrowLeft } from 'lucide-react'
+import { Loader2, LogIn, Info, ShieldCheck, ArrowLeft, MailWarning, Mail } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
+import { authService } from '../services/authService'
+import { ApiError } from '../lib/api'
 import { RadarMark } from '../components/RadarMark'
 
 export default function Login() {
@@ -13,17 +15,24 @@ export default function Login() {
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [rememberMe, setRememberMe] = useState(false)
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [code, setCode] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null)
+  const [resending, setResending] = useState(false)
+  const [resendDevUrl, setResendDevUrl] = useState<string | null>(null)
+
   async function handlePasswordSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
+    setUnverifiedEmail(null)
+    setResendDevUrl(null)
     setSubmitting(true)
     try {
-      const result = await login(email, password)
+      const result = await login(email, password, rememberMe)
       if (result.requires2FA) {
         setPendingId(result.pendingId)
       } else {
@@ -31,9 +40,26 @@ export default function Login() {
         navigate(location.state?.from ?? '/')
       }
     } catch (err) {
+      if (err instanceof ApiError && err.code === 'EMAIL_NOT_VERIFIED') {
+        setUnverifiedEmail(email)
+      }
       setError(err instanceof Error ? err.message : 'Could not sign in.')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function handleResend() {
+    if (!unverifiedEmail) return
+    setResending(true)
+    try {
+      const res = await authService.resendVerification(unverifiedEmail)
+      push(res.message, 'success')
+      setResendDevUrl(res.devPreviewUrl ?? null)
+    } catch (err) {
+      push(err instanceof Error ? err.message : 'Could not resend the email.', 'error')
+    } finally {
+      setResending(false)
     }
   }
 
@@ -53,14 +79,9 @@ export default function Login() {
     }
   }
 
-  function fillDemo(role: 'admin' | 'user') {
-    if (role === 'admin') {
-      setEmail('admin@towerhub.io')
-      setPassword('admin123')
-    } else {
-      setEmail('gus@example.com')
-      setPassword('password1')
-    }
+  function fillDemo() {
+    setEmail('admin@towerhub.io')
+    setPassword('admin123')
   }
 
   return (
@@ -139,7 +160,47 @@ export default function Login() {
               />
             </div>
 
-            {error && <p className="text-sm text-red-400">{error}</p>}
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-mist-300">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="h-4 w-4 rounded border-ink-500 bg-ink-900 text-signal-500 accent-signal-500"
+              />
+              Remember me on this device
+            </label>
+
+            {error && (
+              <div className={unverifiedEmail ? 'rounded-md border border-amber-700/40 bg-amber-950/20 p-3' : ''}>
+                <p className={`text-sm ${unverifiedEmail ? 'text-amber-300' : 'text-red-400'}`}>
+                  {unverifiedEmail ? (
+                    <span className="flex items-center gap-1.5">
+                      <MailWarning size={14} className="shrink-0" /> {error}
+                    </span>
+                  ) : (
+                    error
+                  )}
+                </p>
+                {unverifiedEmail && (
+                  <div className="mt-2.5">
+                    <button
+                      type="button"
+                      onClick={handleResend}
+                      disabled={resending}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-amber-300 hover:underline"
+                    >
+                      {resending ? <Loader2 size={12} className="animate-spin" /> : <Mail size={12} />}
+                      Resend verification email
+                    </button>
+                    {resendDevUrl && (
+                      <a href={resendDevUrl} className="mt-1.5 block break-all text-xs text-amber-300/80 hover:underline">
+                        {resendDevUrl}
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             <button type="submit" disabled={submitting} className="btn-primary w-full !py-3">
               {submitting ? <Loader2 size={16} className="animate-spin" /> : <LogIn size={16} />}
@@ -150,15 +211,10 @@ export default function Login() {
           <div className="card mt-4 flex items-start gap-2.5 p-4 text-xs text-mist-400">
             <Info size={14} className="mt-0.5 shrink-0 text-signal-400" />
             <div>
-              <p className="mb-2">Demo accounts (real accounts in the local backend database):</p>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={() => fillDemo('admin')} className="badge hover:border-signal-600 hover:text-signal-300">
-                  admin@towerhub.io
-                </button>
-                <button type="button" onClick={() => fillDemo('user')} className="badge hover:border-signal-600 hover:text-signal-300">
-                  gus@example.com
-                </button>
-              </div>
+              <p className="mb-2">Demo account (real account in the local backend database):</p>
+              <button type="button" onClick={fillDemo} className="badge hover:border-signal-600 hover:text-signal-300">
+                admin@towerhub.io
+              </button>
             </div>
           </div>
 

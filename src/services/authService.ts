@@ -4,19 +4,19 @@ import type { AccountSession, LoginResult, SafeUser } from '../types/auth'
 export type { SafeUser, PublicUser, AdminUser, LoginAttempt, AccountSession, LoginResult } from '../types/auth'
 
 export const authService = {
-  async register(input: { username: string; email: string; password: string }): Promise<{ user: SafeUser; devVerifyUrl?: string }> {
-    const data = await apiFetch<{ user: SafeUser; accessToken: string; devVerifyUrl?: string }>('/api/auth/register', {
+  /** No session is created here — the account can't sign in until the email is verified. */
+  async register(input: { username: string; email: string; password: string }): Promise<{ message: string; devVerifyUrl?: string }> {
+    return apiFetch<{ message: string; devVerifyUrl?: string }>('/api/auth/register', {
       method: 'POST',
       body: input,
+      skipAuthRetry: true,
     })
-    setAccessToken(data.accessToken)
-    return { user: data.user, devVerifyUrl: data.devVerifyUrl }
   },
 
-  async login(email: string, password: string): Promise<LoginResult> {
+  async login(email: string, password: string, rememberMe = false): Promise<LoginResult> {
     const data = await apiFetch<{ requires2FA: true; pendingId: string } | { user: SafeUser; accessToken: string }>(
       '/api/auth/login',
-      { method: 'POST', body: { email, password }, skipAuthRetry: true }
+      { method: 'POST', body: { email, password, rememberMe }, skipAuthRetry: true }
     )
     if ('requires2FA' in data && data.requires2FA) {
       return { requires2FA: true, pendingId: data.pendingId }
@@ -86,12 +86,19 @@ export const authService = {
     return apiFetch('/api/auth/change-password', { method: 'POST', body: { currentPassword, newPassword } })
   },
 
-  verifyEmail(token: string): Promise<{ verified: boolean; message: string }> {
-    return apiFetch(`/api/auth/verify-email?token=${encodeURIComponent(token)}`, { skipAuthRetry: true })
+  /** On success this also establishes a session (see server route) — sets the in-memory access token. */
+  async verifyEmail(token: string): Promise<{ verified: boolean; message: string; user?: SafeUser }> {
+    const data = await apiFetch<{ verified: boolean; message: string; user?: SafeUser; accessToken?: string }>(
+      `/api/auth/verify-email?token=${encodeURIComponent(token)}`,
+      { skipAuthRetry: true }
+    )
+    if (data.verified && data.accessToken) setAccessToken(data.accessToken)
+    return data
   },
 
-  resendVerification(): Promise<{ message: string; devPreviewUrl?: string }> {
-    return apiFetch('/api/auth/resend-verification', { method: 'POST' })
+  /** Public/pre-login by design — an unverified account has no session to authenticate this call with. */
+  resendVerification(email: string): Promise<{ message: string; devPreviewUrl?: string }> {
+    return apiFetch('/api/auth/resend-verification', { method: 'POST', body: { email }, skipAuthRetry: true })
   },
 
   setupTwoFactor(): Promise<{ secret: string; otpauthUrl: string; qrCodeDataUrl: string }> {

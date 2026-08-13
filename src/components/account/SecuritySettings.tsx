@@ -37,9 +37,10 @@ function EmailVerificationCard() {
   const [devUrl, setDevUrl] = useState<string | null>(null)
 
   async function resend() {
+    if (!user) return
     setSending(true)
     try {
-      const res = await authService.resendVerification()
+      const res = await authService.resendVerification(user.email)
       push(res.message, 'success')
       setDevUrl(res.devPreviewUrl ?? null)
     } catch (err) {
@@ -311,7 +312,9 @@ function SessionsCard() {
               <div className="min-w-0">
                 <p className="truncate text-mist-200">{s.userAgent ?? 'Unknown device'}</p>
                 <p className="font-mono text-xs text-mist-400">
-                  Since {formatDate(s.createdAt)} {s.current && <span className="text-signal-400">· this device</span>}
+                  Since {formatDate(s.createdAt)}
+                  {s.current && <span className="text-signal-400"> · this device</span>}
+                  {s.rememberMe ? ' · remembered' : ' · session-only'}
                 </p>
               </div>
               {!s.current && (

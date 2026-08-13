@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Search, SlidersHorizontal, X } from 'lucide-react'
+import { Search, SlidersHorizontal, X, Flame, Clock, Star, Download } from 'lucide-react'
 import { modService, type ModWithStats } from '../services/modService'
 import { ModGrid, ModGridSkeleton } from '../components/ModGrid'
 import { CATEGORY_ICON } from '../lib/categoryMeta'
+import { Select, type SelectOption } from '../components/ui/Select'
 import { MOD_CATEGORIES, type ModCategory, type SortOption } from '../types'
 
-const SORT_LABEL: Record<SortOption, string> = {
-  popular: 'Most popular',
-  recent: 'Most recent',
-  rating: 'Top rated',
-  downloads: 'Most downloaded',
-}
+const SORT_OPTIONS: SelectOption<SortOption>[] = [
+  { value: 'popular', label: 'Most popular', icon: Flame },
+  { value: 'recent', label: 'Most recent', icon: Clock },
+  { value: 'rating', label: 'Top rated', icon: Star },
+  { value: 'downloads', label: 'Most downloaded', icon: Download },
+]
 
 const PAGE_SIZE = 12
 
@@ -67,13 +68,7 @@ export default function Explore() {
             className="input pl-9"
           />
         </div>
-        <select value={sort} onChange={(e) => update({ sort: e.target.value })} className="select w-full sm:w-56">
-          {Object.entries(SORT_LABEL).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
+        <Select value={sort} onChange={(v) => update({ sort: v })} options={SORT_OPTIONS} className="w-full sm:w-56" />
         <button onClick={() => setFiltersOpen((v) => !v)} className="btn-secondary sm:hidden">
           <SlidersHorizontal size={15} />
           Filters {activeFilterCount > 0 && `(${activeFilterCount})`}

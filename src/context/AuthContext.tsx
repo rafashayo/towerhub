@@ -5,9 +5,10 @@ import type { LoginResult, SafeUser } from '../types/auth'
 interface AuthContextValue {
   user: SafeUser | null
   loading: boolean
-  login: (email: string, password: string) => Promise<LoginResult>
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<LoginResult>
   loginWithTwoFactor: (pendingId: string, code: string) => Promise<SafeUser>
-  register: (username: string, email: string, password: string) => Promise<{ user: SafeUser; devVerifyUrl?: string }>
+  register: (username: string, email: string, password: string) => Promise<{ message: string; devVerifyUrl?: string }>
+  verifyEmail: (token: string) => Promise<{ verified: boolean; message: string }>
   logout: () => Promise<void>
   logoutAll: () => Promise<void>
   updateProfile: (patch: Partial<Pick<SafeUser, 'bio' | 'avatarUrl' | 'username'>>) => Promise<void>
@@ -36,8 +37,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const login = useCallback(async (email: string, password: string) => {
-    const result = await authService.login(email, password)
+  const login = useCallback(async (email: string, password: string, rememberMe = false) => {
+    const result = await authService.login(email, password, rememberMe)
     if (!result.requires2FA) setUser(result.user)
     return result
   }, [])
@@ -49,8 +50,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const register = useCallback(async (username: string, email: string, password: string) => {
-    const result = await authService.register({ username, email, password })
-    setUser(result.user)
+    // No setUser here — registering no longer starts a session; see authService.register.
+    return authService.register({ username, email, password })
+  }, [])
+
+  const verifyEmail = useCallback(async (token: string) => {
+    const result = await authService.verifyEmail(token)
+    if (result.verified && result.user) setUser(result.user)
     return result
   }, [])
 
@@ -84,13 +90,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       loginWithTwoFactor,
       register,
+      verifyEmail,
       logout,
       logoutAll,
       updateProfile,
       toggleFavorite,
       refresh,
     }),
-    [user, loading, login, loginWithTwoFactor, register, logout, logoutAll, updateProfile, toggleFavorite, refresh]
+    [user, loading, login, loginWithTwoFactor, register, verifyEmail, logout, logoutAll, updateProfile, toggleFavorite, refresh]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

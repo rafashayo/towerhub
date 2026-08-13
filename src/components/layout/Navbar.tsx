@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
+import { Menu, MenuButton, MenuItems, MenuItem } from '@headlessui/react'
 import {
   Search,
-  Menu,
+  Menu as MenuIcon,
   X,
   UploadCloud,
   UserCircle2,
@@ -11,6 +12,7 @@ import {
   Heart,
   Settings,
   ChevronDown,
+  ShieldCheck,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { RadarMark } from '../RadarMark'
@@ -20,16 +22,6 @@ export function Navbar() {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [menuOpen, setMenuOpen] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    function onClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
-    }
-    document.addEventListener('mousedown', onClick)
-    return () => document.removeEventListener('mousedown', onClick)
-  }, [])
 
   function submitSearch(e: React.FormEvent) {
     e.preventDefault()
@@ -37,8 +29,18 @@ export function Navbar() {
     setMobileOpen(false)
   }
 
+  async function handleLogout() {
+    await logout()
+    navigate('/')
+  }
+
   const navLinkClass = ({ isActive }: { isActive: boolean }) =>
     `text-sm font-medium transition-colors ${isActive ? 'text-signal-400' : 'text-mist-300 hover:text-white'}`
+
+  const itemClass = ({ focus }: { focus: boolean }) =>
+    `flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors ${
+      focus ? 'bg-ink-700 text-white' : 'text-mist-100'
+    }`
 
   return (
     <header className="sticky top-0 z-50 border-b border-ink-700 bg-ink-950/85 backdrop-blur-md">
@@ -76,69 +78,75 @@ export function Navbar() {
                 <UploadCloud size={16} />
                 Upload mod
               </Link>
-              <div className="relative" ref={menuRef}>
-                <button
-                  onClick={() => setMenuOpen((v) => !v)}
-                  className="flex items-center gap-2 rounded-md border border-ink-600 bg-ink-800 py-1 pl-1 pr-2.5 hover:border-signal-700"
+
+              <Menu as="div" className="relative">
+                <MenuButton
+                  className="group flex items-center gap-2 rounded-md border border-ink-600 bg-ink-800 py-1 pl-1 pr-2.5 transition-colors
+                    hover:border-signal-700 data-[open]:border-signal-600 data-[open]:bg-ink-750"
                 >
-                  <img src={user.avatarUrl} alt="" className="h-7 w-7 rounded-sm" />
+                  <img src={user.avatarUrl} alt="" className="h-7 w-7 rounded-sm ring-1 ring-inset ring-white/10" />
                   <span className="hidden text-sm font-medium text-mist-100 lg:inline">{user.username}</span>
-                  <ChevronDown size={14} className="text-mist-400" />
-                </button>
-                {menuOpen && (
-                  <div className="card absolute right-0 top-[calc(100%+8px)] w-56 overflow-hidden p-1.5">
-                    <div className="border-b border-ink-600 px-2.5 py-2 sm:hidden">
-                      <Link
-                        to="/upload"
-                        onClick={() => setMenuOpen(false)}
-                        className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-mist-100 hover:bg-ink-700"
-                      >
-                        <UploadCloud size={15} /> Upload mod
-                      </Link>
+                  <ChevronDown
+                    size={14}
+                    className="text-mist-400 transition-transform duration-150 group-data-[open]:rotate-180 group-data-[open]:text-signal-400"
+                  />
+                </MenuButton>
+
+                <MenuItems
+                  transition
+                  anchor="bottom end"
+                  className="z-50 mt-2 w-64 origin-top-right overflow-hidden rounded-xl border border-ink-600
+                    bg-ink-850/97 shadow-glow-lg backdrop-blur-md transition duration-150 ease-out
+                    focus:outline-none data-[closed]:scale-95 data-[closed]:opacity-0 data-[leave]:duration-100"
+                >
+                  <div className="flex items-center gap-3 border-b border-ink-600 bg-ink-900/60 px-3.5 py-3">
+                    <img src={user.avatarUrl} alt="" className="h-10 w-10 shrink-0 rounded-md ring-1 ring-inset ring-white/10" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-white">{user.username}</p>
+                      <p className="truncate text-xs text-mist-400">{user.email}</p>
                     </div>
-                    <Link
-                      to={`/users/${user.username}`}
-                      onClick={() => setMenuOpen(false)}
-                      className="flex items-center gap-2 rounded-md px-2.5 py-2 text-sm text-mist-100 hover:bg-ink-700"
-                    >
-                      <UserCircle2 size={15} /> My profile
-                    </Link>
-                    <Link
-                      to={`/users/${user.username}?tab=favorites`}
-                      onClick={() => setMenuOpen(false)}
-                      className="flex items-center gap-2 rounded-md px-2.5 py-2 text-sm text-mist-100 hover:bg-ink-700"
-                    >
-                      <Heart size={15} /> Favorites
-                    </Link>
-                    <Link
-                      to={`/users/${user.username}?tab=security`}
-                      onClick={() => setMenuOpen(false)}
-                      className="flex items-center gap-2 rounded-md px-2.5 py-2 text-sm text-mist-100 hover:bg-ink-700"
-                    >
-                      <Settings size={15} /> Security
-                    </Link>
                     {user.role === 'admin' && (
-                      <Link
-                        to="/admin"
-                        onClick={() => setMenuOpen(false)}
-                        className="flex items-center gap-2 rounded-md px-2.5 py-2 text-sm text-signal-400 hover:bg-ink-700"
-                      >
-                        <LayoutDashboard size={15} /> Admin panel
-                      </Link>
+                      <span className="badge-signal ml-auto shrink-0 !py-0.5">
+                        <ShieldCheck size={10} /> Staff
+                      </span>
                     )}
-                    <button
-                      onClick={() => {
-                        setMenuOpen(false)
-                        logout()
-                        navigate('/')
-                      }}
-                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-red-300 hover:bg-red-950/40"
+                  </div>
+
+                  <div className="space-y-0.5 p-1.5">
+                    <MenuItem as={Link} to="/upload" className={({ focus }) => `${itemClass({ focus })} sm:hidden`}>
+                      <UploadCloud size={15} /> Upload mod
+                    </MenuItem>
+                    <MenuItem as={Link} to={`/users/${user.username}`} className={itemClass}>
+                      <UserCircle2 size={15} /> My profile
+                    </MenuItem>
+                    <MenuItem as={Link} to={`/users/${user.username}?tab=favorites`} className={itemClass}>
+                      <Heart size={15} /> Favorites
+                    </MenuItem>
+                    <MenuItem as={Link} to={`/users/${user.username}?tab=security`} className={itemClass}>
+                      <Settings size={15} /> Security
+                    </MenuItem>
+                    {user.role === 'admin' && (
+                      <MenuItem as={Link} to="/admin" className={({ focus }) => `${itemClass({ focus })} !text-signal-400`}>
+                        <LayoutDashboard size={15} /> Admin dashboard
+                      </MenuItem>
+                    )}
+                  </div>
+
+                  <div className="border-t border-ink-600 p-1.5">
+                    <MenuItem
+                      as="button"
+                      onClick={handleLogout}
+                      className={({ focus }: { focus: boolean }) =>
+                        `flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm transition-colors ${
+                          focus ? 'bg-red-950/50 text-red-300' : 'text-red-400'
+                        }`
+                      }
                     >
                       <LogOut size={15} /> Sign out
-                    </button>
+                    </MenuItem>
                   </div>
-                )}
-              </div>
+                </MenuItems>
+              </Menu>
             </>
           ) : (
             <>
@@ -151,7 +159,7 @@ export function Navbar() {
             </>
           )}
           <button className="text-mist-200 md:hidden" onClick={() => setMobileOpen((v) => !v)} aria-label="Menu">
-            {mobileOpen ? <X size={22} /> : <Menu size={22} />}
+            {mobileOpen ? <X size={22} /> : <MenuIcon size={22} />}
           </button>
         </div>
       </div>

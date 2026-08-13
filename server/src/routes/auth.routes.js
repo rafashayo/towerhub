@@ -57,17 +57,30 @@ function clientIp(req) {
 }
 
 // ---------- session issuing ----------
-function issueSession(user, req, res) {
+/**
+ * `rememberMe` controls both how long the refresh token is valid for
+ * server-side (30 days vs a few hours, see config.js) and whether the
+ * cookie itself persists across a browser restart (see cookies.js).
+ */
+function issueSession(user, req, res, rememberMe = false) {
   const accessToken = signAccessToken(user)
   const rawRefresh = generateRefreshToken()
-  const expiresAt = refreshExpiryDate()
+  const expiresAt = refreshExpiryDate(rememberMe)
 
   db.prepare(
-    `INSERT INTO refresh_tokens (id, user_id, token_hash, user_agent, created_at, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  ).run(newId('rt'), user.id, hashRefreshToken(rawRefresh), req.headers['user-agent'] ?? null, new Date().toISOString(), expiresAt.toISOString())
+    `INSERT INTO refresh_tokens (id, user_id, token_hash, user_agent, remember_me, created_at, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    newId('rt'),
+    user.id,
+    hashRefreshToken(rawRefresh),
+    req.headers['user-agent'] ?? null,
+    rememberMe ? 1 : 0,
+    new Date().toISOString(),
+    expiresAt.toISOString()
+  )
 
-  setRefreshCookie(res, rawRefresh, expiresAt)
+  setRefreshCookie(res, rawRefresh, expiresAt, rememberMe)
   return accessToken
 }
 
@@ -124,8 +137,13 @@ authRouter.post('/register', registerLimiter, (req, res) => {
     const verifyUrl = `${req.protocol}://${req.get('host')}/api/auth/verify-email?token=${rawToken}`
     const { devPreviewUrl } = simulateSendEmail({ to: email, subject: 'Verify your TowerHub email', actionUrl: verifyUrl })
 
-    const accessToken = issueSession(user, req, res)
-    res.status(201).json({ user: toPrivateUser(user), accessToken, devVerifyUrl: devPreviewUrl })
+    // No session issued here on purpose — this account can't sign in until
+    // the email is verified (see /login below), so registering doesn't log
+    // you in like it used to.
+    res.status(201).json({
+      message: 'Account created. Check your email to verify your address before signing in.',
+      devVerifyUrl: devPreviewUrl,
+    })
   })
 })
 
@@ -138,10 +156,16 @@ authRouter.post('/login', loginLimiter, (req, res) => {
     return badRequest(res, err)
   }
   const email = input.email.toLowerCase()
+  const rememberMe = req.body?.rememberMe === true
 
   const windowStart = new Date(Date.now() - config.loginLockoutWindowMin * 60000).toISOString()
+  // 'email_not_verified' is excluded on purpose: correct credentials aren't a
+  // failed guess, so someone who just hasn't clicked their verification link
+  // yet shouldn't be able to lock themselves out by retrying.
   const { failed } = db
-    .prepare('SELECT COUNT(*) AS failed FROM login_attempts WHERE email = ? AND success = 0 AND created_at > ?')
+    .prepare(
+      "SELECT COUNT(*) AS failed FROM login_attempts WHERE email = ? AND success = 0 AND (reason IS NULL OR reason != 'email_not_verified') AND created_at > ?"
+    )
     .get(email, windowStart)
   if (failed >= config.loginMaxAttempts) {
     return res.status(429).json({
@@ -166,11 +190,20 @@ authRouter.post('/login', loginLimiter, (req, res) => {
       return res.status(401).json({ message: 'Incorrect email or password.' })
     }
 
+    if (!user.email_verified) {
+      recordAttempt(email, false, 'email_not_verified', req)
+      return res.status(403).json({
+        message: 'Please verify your email before signing in. Check your inbox for the verification link.',
+        code: 'EMAIL_NOT_VERIFIED',
+      })
+    }
+
     if (user.totp_enabled) {
       const pendingId = newId('p2fa')
-      db.prepare('INSERT INTO pending_2fa (id, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)').run(
+      db.prepare('INSERT INTO pending_2fa (id, user_id, remember_me, expires_at, created_at) VALUES (?, ?, ?, ?, ?)').run(
         pendingId,
         user.id,
+        rememberMe ? 1 : 0,
         new Date(Date.now() + 5 * 60000).toISOString(),
         new Date().toISOString()
       )
@@ -179,7 +212,7 @@ authRouter.post('/login', loginLimiter, (req, res) => {
     }
 
     recordAttempt(email, true, null, req)
-    const accessToken = issueSession(user, req, res)
+    const accessToken = issueSession(user, req, res, rememberMe)
     res.json({ user: toPrivateUser(user), accessToken })
   })
 })
@@ -202,7 +235,7 @@ authRouter.post('/login/2fa', loginLimiter, (req, res) => {
 
   db.prepare('DELETE FROM pending_2fa WHERE id = ?').run(pendingId)
   recordAttempt(user.email, true, '2fa_ok', req)
-  const accessToken = issueSession(user, req, res)
+  const accessToken = issueSession(user, req, res, !!pending.remember_me)
   res.json({ user: toPrivateUser(user), accessToken })
 })
 
@@ -224,9 +257,10 @@ authRouter.post('/refresh', (req, res) => {
     return res.status(401).json({ message: 'Account unavailable.' })
   }
 
-  // rotate: revoke the used token, issue a fresh one
+  // rotate: revoke the used token, issue a fresh one that preserves whether
+  // this was a "remembered" session (persistent cookie + longer TTL) or not
   db.prepare('UPDATE refresh_tokens SET revoked_at = ? WHERE id = ?').run(new Date().toISOString(), row.id)
-  const accessToken = issueSession(user, req, res)
+  const accessToken = issueSession(user, req, res, !!row.remember_me)
   res.json({ user: toPrivateUser(user), accessToken })
 })
 
@@ -351,24 +385,42 @@ authRouter.get('/verify-email', (req, res) => {
 
   const now = new Date().toISOString()
   db.prepare('UPDATE users SET email_verified = 1 WHERE id = ?').run(row.user_id)
-  db.prepare('UPDATE email_verifications SET used_at = ? WHERE id = ?').run(now, row.id)
-  res.json({ verified: true, message: 'Email verified. Thanks!' })
+  // Invalidate every outstanding verification token for this user, not just
+  // the one that was clicked — otherwise an older link from an earlier
+  // resend stays live (unused, unexpired) and can replay this same
+  // auto-login indefinitely instead of being a true one-time link.
+  db.prepare('UPDATE email_verifications SET used_at = ? WHERE user_id = ? AND used_at IS NULL').run(now, row.user_id)
+
+  // Verifying is the last gate before this account can sign in — go ahead
+  // and establish a session right here so clicking the link logs you in,
+  // instead of bouncing back to a login form you'd otherwise now pass.
+  // There's no "remember me" checkbox in this flow, so default to a
+  // persistent session — clicking an emailed link is a deliberate enough
+  // action that bouncing them to a session-only login would be annoying.
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(row.user_id)
+  const accessToken = issueSession(user, req, res, true)
+  res.json({ verified: true, message: 'Email verified — you are now signed in.', user: toPrivateUser(user), accessToken })
 })
 
-authRouter.post('/resend-verification', requireAuth, (req, res) => {
-  if (req.user.email_verified) return res.status(400).json({ message: 'Your email is already verified.' })
+authRouter.post('/resend-verification', forgotPasswordLimiter, (req, res) => {
+  const email = String(req.body?.email ?? '').trim().toLowerCase()
+  const generic = { message: 'If that account exists and needs verifying, a new link has been sent.' }
+  if (!email) return res.status(400).json({ message: 'Email is required.' })
+
+  const user = db.prepare('SELECT * FROM users WHERE lower(email) = ?').get(email)
+  if (!user || user.email_verified) return res.json(generic) // don't reveal existence or verified-ness
 
   const rawToken = randomToken()
   db.prepare('INSERT INTO email_verifications (id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)').run(
     newId('ev'),
-    req.user.id,
+    user.id,
     sha256(rawToken),
     new Date(Date.now() + 24 * 3600000).toISOString(),
     new Date().toISOString()
   )
   const verifyUrl = `${req.protocol}://${req.get('host')}/api/auth/verify-email?token=${rawToken}`
-  const { devPreviewUrl } = simulateSendEmail({ to: req.user.email, subject: 'Verify your TowerHub email', actionUrl: verifyUrl })
-  res.json({ message: 'Verification email sent.', devPreviewUrl })
+  const { devPreviewUrl } = simulateSendEmail({ to: user.email, subject: 'Verify your TowerHub email', actionUrl: verifyUrl })
+  res.json({ ...generic, devPreviewUrl })
 })
 
 // ---------- sessions ----------
@@ -378,7 +430,7 @@ authRouter.get('/sessions', requireAuth, (req, res) => {
 
   const rows = db
     .prepare(
-      `SELECT id, user_agent, created_at, expires_at, token_hash FROM refresh_tokens
+      `SELECT id, user_agent, remember_me, created_at, expires_at, token_hash FROM refresh_tokens
        WHERE user_id = ? AND revoked_at IS NULL AND expires_at > ? ORDER BY created_at DESC`
     )
     .all(req.user.id, new Date().toISOString())
@@ -387,6 +439,7 @@ authRouter.get('/sessions', requireAuth, (req, res) => {
     sessions: rows.map((r) => ({
       id: r.id,
       userAgent: r.user_agent,
+      rememberMe: !!r.remember_me,
       createdAt: r.created_at,
       expiresAt: r.expires_at,
       current: r.token_hash === currentHash,

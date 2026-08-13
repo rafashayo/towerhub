@@ -50,6 +50,7 @@ export interface LoginAttempt {
 export interface AccountSession {
   id: string
   userAgent: string | null
+  rememberMe: boolean
   createdAt: string
   expiresAt: string
   current: boolean

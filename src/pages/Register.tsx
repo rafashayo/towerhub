@@ -13,7 +13,7 @@ export default function Register() {
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [devVerifyUrl, setDevVerifyUrl] = useState<string | null>(null)
+  const [registered, setRegistered] = useState<{ devVerifyUrl?: string } | null>(null)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -21,11 +21,7 @@ export default function Register() {
     setSubmitting(true)
     try {
       const { devVerifyUrl } = await register(username, email, password)
-      if (devVerifyUrl) {
-        setDevVerifyUrl(devVerifyUrl)
-      } else {
-        navigate('/')
-      }
+      setRegistered({ devVerifyUrl })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create the account.')
     } finally {
@@ -33,31 +29,36 @@ export default function Register() {
     }
   }
 
-  if (devVerifyUrl) {
+  if (registered) {
     return (
       <div className="mx-auto flex min-h-[80vh] max-w-md flex-col justify-center px-4 py-12 sm:px-6">
         <div className="card p-6 text-center">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-signal-950 text-signal-400">
             <MailCheck size={22} />
           </div>
-          <h1 className="text-xl font-bold">Account created — verify your email</h1>
+          <h1 className="text-xl font-bold">Verify your email to finish signing up</h1>
           <p className="mt-2 text-sm text-mist-400">
-            You're signed in already. We'd normally send a verification link to <strong className="text-mist-200">{email}</strong>.
+            We sent a verification link to <strong className="text-mist-200">{email}</strong>. You need to open it
+            before you can sign in.
           </p>
 
-          <div className="mt-4 flex items-start gap-2 rounded-md bg-ink-900 p-3 text-left text-xs text-mist-400">
-            <Info size={14} className="mt-0.5 shrink-0 text-signal-400" />
-            <p>
-              This demo has no real email server configured, so here's the verification link directly (in
-              production this field would not exist — the link would only ever reach the user's inbox).
-            </p>
-          </div>
-          <a href={devVerifyUrl} className="btn-secondary mt-3 w-full break-all !text-xs">
-            {devVerifyUrl}
-          </a>
+          {registered.devVerifyUrl && (
+            <>
+              <div className="mt-4 flex items-start gap-2 rounded-md bg-ink-900 p-3 text-left text-xs text-mist-400">
+                <Info size={14} className="mt-0.5 shrink-0 text-signal-400" />
+                <p>
+                  This demo has no real email server configured, so here's the verification link directly (in
+                  production this field would not exist — the link would only ever reach the user's inbox).
+                </p>
+              </div>
+              <a href={registered.devVerifyUrl} className="btn-secondary mt-3 w-full break-all !text-xs">
+                {registered.devVerifyUrl}
+              </a>
+            </>
+          )}
 
-          <button onClick={() => navigate('/')} className="btn-primary mt-5 w-full">
-            Continue to TowerHub
+          <button onClick={() => navigate('/login')} className="btn-primary mt-5 w-full">
+            Go to sign in
           </button>
         </div>
       </div>

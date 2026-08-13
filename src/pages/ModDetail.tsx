@@ -9,14 +9,17 @@ import {
   ChevronRight,
   History,
   ShieldAlert,
+  CheckCircle2,
 } from 'lucide-react'
 import { modService, type ModWithStats } from '../services/modService'
 import { commentService } from '../services/commentService'
 import { ratingService } from '../services/ratingService'
+import { downloadHistoryService } from '../services/downloadHistoryService'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { StarRating } from '../components/StarRating'
 import { CommentThread } from '../components/CommentThread'
+import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { CATEGORY_ICON } from '../lib/categoryMeta'
 import { formatBytes, formatDate, timeAgo } from '../lib/utils'
 import type { Comment } from '../types'
@@ -34,6 +37,8 @@ export default function ModDetail() {
   const [myRating, setMyRating] = useState<number>(0)
   const [downloading, setDownloading] = useState(false)
   const [notFound, setNotFound] = useState(false)
+  const [lastDownloadedAt, setLastDownloadedAt] = useState<string | null>(null)
+  const [confirmRedownload, setConfirmRedownload] = useState(false)
 
   const load = useCallback(async () => {
     if (!slug) return
@@ -45,6 +50,7 @@ export default function ModDetail() {
     }
     setMod(m)
     setActiveShot(0)
+    setLastDownloadedAt(downloadHistoryService.lastDownloadedAt(user?.id ?? 'guest', m.id))
     const [cs, myR] = await Promise.all([
       commentService.listForMod(m.id),
       user ? ratingService.getUserRating(m.id, user.id) : Promise.resolve(null),
@@ -85,7 +91,7 @@ export default function ModDetail() {
   const isFavorite = user?.favoriteModIds.includes(mod.id) ?? false
   const isOwner = user?.id === mod.authorId
 
-  async function handleDownload() {
+  async function performDownload() {
     if (!mod) return
     setDownloading(true)
     try {
@@ -97,12 +103,23 @@ export default function ModDetail() {
       a.click()
       a.remove()
       setMod((m) => (m ? { ...m, downloadCount: m.downloadCount + 1 } : m))
+      const userId = user?.id ?? 'guest'
+      downloadHistoryService.markDownloaded(userId, mod.id)
+      setLastDownloadedAt(downloadHistoryService.lastDownloadedAt(userId, mod.id))
       push('Download started.', 'success')
     } catch {
       push('Could not start the download.', 'error')
     } finally {
       setDownloading(false)
     }
+  }
+
+  function handleDownload() {
+    if (lastDownloadedAt) {
+      setConfirmRedownload(true)
+      return
+    }
+    performDownload()
   }
 
   async function handleFavorite() {
@@ -299,6 +316,11 @@ export default function ModDetail() {
               {downloading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
               Download mod
             </button>
+            {lastDownloadedAt && (
+              <p className="mt-2 flex items-center justify-center gap-1.5 text-xs text-signal-400">
+                <CheckCircle2 size={12} /> Downloaded {timeAgo(lastDownloadedAt)}
+              </p>
+            )}
             <button
               onClick={handleFavorite}
               className={`btn-secondary mt-2.5 w-full ${isFavorite ? '!border-signal-600 !text-signal-300' : ''}`}
@@ -323,6 +345,16 @@ export default function ModDetail() {
           <p className="px-1 text-center text-xs text-mist-400">Published on {formatDate(mod.createdAt)}</p>
         </aside>
       </div>
+
+      <ConfirmDialog
+        open={confirmRedownload}
+        onClose={() => setConfirmRedownload(false)}
+        onConfirm={performDownload}
+        title="You already downloaded this mod"
+        description={`You downloaded ${mod.title} ${lastDownloadedAt ? timeAgo(lastDownloadedAt) : 'before'}. Download it again anyway?`}
+        confirmLabel="Download anyway"
+        cancelLabel="Cancel"
+      />
     </div>
   )
 }
