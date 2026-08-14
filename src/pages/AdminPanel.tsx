@@ -23,6 +23,7 @@ import {
 import { modService, type ModWithStats } from '../services/modService'
 import { commentService } from '../services/commentService'
 import { adminService } from '../services/adminService'
+import { notificationService } from '../services/notificationService'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { CATEGORY_ICON } from '../lib/categoryMeta'
@@ -176,8 +177,9 @@ export default function AdminPanel() {
   async function approve(modId: string) {
     setBusyId(modId)
     try {
-      await modService.setStatus(modId, 'approved')
+      const approved = await modService.setStatus(modId, 'approved')
       push('Mod approved and published to the catalog.', 'success')
+      notificationService.notifyModApproved(approved)
       loadMods()
     } catch (err) {
       actionError(err, 'Could not approve this mod.')

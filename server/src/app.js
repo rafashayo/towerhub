@@ -8,6 +8,7 @@ import { twoFactorRouter } from './routes/twofactor.routes.js'
 import { usersRouter } from './routes/users.routes.js'
 import { adminRouter } from './routes/admin.routes.js'
 import { uploadsRouter, UPLOADS_DIR } from './routes/uploads.routes.js'
+import { notificationsRouter } from './routes/notifications.routes.js'
 
 export const app = express()
 
@@ -23,6 +24,7 @@ app.use('/api/auth', authRouter)
 app.use('/api/users', usersRouter)
 app.use('/api/admin', adminRouter)
 app.use('/api/uploads', uploadsRouter)
+app.use('/api/notifications', notificationsRouter)
 // Deliberately a sibling path, not a sub-path of /api/uploads — that router
 // applies requireAuth to everything under its mount prefix, which would
 // otherwise also gate this public, unauthenticated static file serving.

@@ -157,6 +157,39 @@ stuffed into `localStorage`:
   `server/src/routes/uploads.routes.js` — the rest of the app (which only
   ever deals with the returned `url` string) doesn't change.
 
+## Discord notifications
+
+When an admin **approves** a mod (Admin panel → Approve — not when it's
+first submitted; pending/rejected mods never ping the channel), the
+frontend fires a **best-effort, non-blocking** call to
+`POST /api/notifications/mod-approved`. The backend — not the browser —
+owns the actual Discord webhook URL and posts a real embed to it, with the
+mod's screenshot as the embed's `thumbnail`:
+
+- **Setup:** create a webhook in your Discord server (Server Settings →
+  Integrations → Webhooks → New Webhook → Copy URL), paste it into
+  `DISCORD_WEBHOOK_URL` in `server/.env`, restart the server. Leave it empty
+  and the endpoint just logs a note and responds `{ sent: false, reason:
+  'not_configured' }` — approving a mod is never blocked by this either way.
+- **Why the backend and not the browser:** a webhook URL is a bearer secret
+  — anyone who has it can post to your channel. Discord's webhook endpoint
+  does accept cross-origin requests, so posting directly from the browser
+  would technically work, but it would mean shipping that secret in the
+  frontend bundle for anyone to extract. The server holds it instead; the
+  browser only ever calls its own `/api/notifications/*` route.
+- **Abuse-resistant by construction:** the route requires an authenticated
+  **admin** session (`requireAuth` + `requireAdmin` — a regular user can't
+  trigger it), rate-limits to 20 calls/hour/IP, validates every field with
+  zod (including an enum check on `category`), and only accepts a
+  `thumbnailPath` that starts with `/api/files/…` — it will reject an
+  attempt to point the embed's thumbnail at an arbitrary external URL.
+- **One real limitation:** the embed's thumbnail and link URLs are built
+  from `CLIENT_ORIGIN`. Discord's servers fetch/render those directly, and
+  they can't reach `http://localhost:5173` — so while running locally, the
+  embed posts successfully with working title/description/category/version
+  fields, but the thumbnail and "open mod" link won't resolve until this is
+  deployed behind a real public domain and `CLIENT_ORIGIN` points at it.
+
 ## What's simulated vs. production
 
 ### Accounts & authentication — **real**, see above

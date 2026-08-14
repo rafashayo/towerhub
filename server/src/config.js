@@ -24,6 +24,9 @@ export const config = {
   loginLockoutWindowMin: Number(process.env.LOGIN_LOCKOUT_WINDOW_MIN ?? 15),
 
   secureCookies: bool(process.env.SECURE_COOKIES, false),
+
+  // Optional — leave unset to no-op. See lib/discord.js.
+  discordWebhookUrl: process.env.DISCORD_WEBHOOK_URL || '',
 }
 
 if (config.isProd && config.jwtAccessSecret.startsWith('dev-')) {
